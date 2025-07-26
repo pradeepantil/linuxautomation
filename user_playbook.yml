@@ -1,0 +1,40 @@
+---
+- name: Create non-root user with sudo privileges
+  hosts: all
+  become: yes
+  vars:
+    new_user: ansible_user
+    new_user_password: your_secure_password
+
+  tasks:
+    - name: Create new user
+      ansible.builtin.user:
+        name: "{{ new_user }}"
+        password: "{{ new_user_password | password_hash('sha512') }}"
+        state: present
+        shell: /bin/bash
+        create_home: yes
+
+    - name: Add new user to sudo group (Ubuntu)
+      ansible.builtin.user:
+        name: "{{ new_user }}"
+        groups: sudo
+        append: yes
+      when: ansible_facts['distribution'] == 'Ubuntu'
+
+    - name: Add new user to wheel group (RHEL)
+      ansible.builtin.user:
+        name: "{{ new_user }}"
+        groups: wheel
+        append: yes
+      when: ansible_facts['distribution'] == 'RedHat' or ansible_facts['distribution'] == 'CentOS'
+
+    - name: Ensure sudoers file allows wheel group (RHEL)
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers
+        regexp: '^%wheel\s+ALL=\(ALL\)\s+ALL'
+        line: '%wheel ALL=(ALL) ALL'
+        state: present
+        validate: '/usr/sbin/visudo -cf %s'
+      when: ansible_facts['distribution'] == 'RedHat' or ansible_facts['distribution'] == 'CentOS'
+

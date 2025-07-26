@@ -1,0 +1,21 @@
+---
+- name: Install essential packages
+  hosts: all
+  become: yes
+  vars:
+    common_packages_ubuntu: [ 'vim', 'git', 'curl', 'wget', 'net-tools', 'htop', 'unzip' ]
+    common_packages_rhel: [ 'vim', 'git', 'curl', 'wget', 'net-tools', 'htop', 'unzip' ]
+
+  tasks:
+    - name: Install common packages on Ubuntu
+      ansible.builtin.apt:
+        name: "{{ common_packages_ubuntu }}"
+        state: present
+      when: ansible_facts['distribution'] == 'Ubuntu'
+
+    - name: Install common packages on RHEL
+      ansible.builtin.yum:
+        name: "{{ common_packages_rhel }}"
+        state: present
+      when: ansible_facts['distribution'] == 'RedHat' or ansible_facts['distribution'] == 'CentOS'
+

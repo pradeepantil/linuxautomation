@@ -1,0 +1,85 @@
+---
+- name: Install Prometheus Node Exporter
+  hosts: all
+  become: yes
+  vars:
+    node_exporter_version: 1.8.1
+    node_exporter_tarball: node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
+    node_exporter_url: https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/{{ node_exporter_tarball }}
+    node_exporter_install_dir: /usr/local/bin
+    node_exporter_service_file: /etc/systemd/system/node_exporter.service
+
+  tasks:
+    - name: Create node_exporter group
+      ansible.builtin.group:
+        name: node_exporter
+        system: yes
+        state: present
+
+    - name: Create node_exporter user
+      ansible.builtin.user:
+        name: node_exporter
+        system: yes
+        shell: /sbin/nologin
+        group: node_exporter
+        create_home: no
+        state: present
+
+    - name: Download Node Exporter tarball
+      ansible.builtin.get_url:
+        url: "{{ node_exporter_url }}"
+        dest: /tmp/{{ node_exporter_tarball }}
+        mode: '0644'
+
+    - name: Extract Node Exporter tarball
+      ansible.builtin.unarchive:
+        src: /tmp/{{ node_exporter_tarball }}
+        dest: /tmp
+        remote_src: yes
+
+    - name: Copy node_exporter binary to install directory
+      ansible.builtin.copy:
+        src: /tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter
+        dest: "{{ node_exporter_install_dir }}/node_exporter"
+        owner: node_exporter
+        group: node_exporter
+        mode: '0755'
+        remote_src: yes
+
+    - name: Create systemd service file for Node Exporter
+      ansible.builtin.template:
+        src: node_exporter.service.j2
+        dest: "{{ node_exporter_service_file }}"
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart node_exporter
+
+    - name: Reload systemd and start node_exporter service
+      ansible.builtin.systemd:
+        name: node_exporter
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Open port 9100 in firewalld (RHEL)
+      ansible.posix.firewalld:
+        port: 9100/tcp
+        state: enabled
+        permanent: yes
+        immediate: yes
+      when: ansible_facts['distribution'] == 'RedHat' or ansible_facts['distribution'] == 'CentOS'
+
+    - name: Allow port 9100 in ufw (Ubuntu)
+      community.general.ufw:
+        rule: allow
+        port: '9100'
+        proto: tcp
+      when: ansible_facts['distribution'] == 'Ubuntu'
+
+  handlers:
+    - name: Restart node_exporter
+      ansible.builtin.systemd:
+        name: node_exporter
+        state: restarted
+

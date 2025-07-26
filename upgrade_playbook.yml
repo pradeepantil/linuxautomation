@@ -1,0 +1,17 @@
+---
+- name: Install all system upgrades
+  hosts: all
+  become: yes
+  tasks:
+    - name: Update apt cache and upgrade all packages on Ubuntu
+      ansible.builtin.apt:
+        update_cache: yes
+        upgrade: dist
+      when: ansible_facts['distribution'] == 'Ubuntu'
+
+    - name: Upgrade all packages on RHEL
+      ansible.builtin.yum:
+        name: '*'
+        state: latest
+      when: ansible_facts['distribution'] == 'RedHat' or ansible_facts['distribution'] == 'CentOS'
+

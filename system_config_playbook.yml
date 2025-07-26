@@ -1,0 +1,16 @@
+---
+- name: Set hostname and timezone
+  hosts: all
+  become: yes
+  vars:
+    desired_timezone: America/New_York
+
+  tasks:
+    - name: Set hostname
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Set timezone
+      community.general.timezone:
+        name: "{{ desired_timezone }}"
+

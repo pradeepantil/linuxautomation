@@ -1,0 +1,185 @@
+---
+- name: Automate Linux Server Management
+  hosts: all
+  become: yes
+  vars:
+    new_user: ansible_user
+    new_user_password: your_secure_password
+    common_packages_ubuntu: [ 'vim', 'git', 'curl', 'wget', 'net-tools', 'htop', 'unzip' ]
+    common_packages_rhel: [ 'vim', 'git', 'curl', 'wget', 'net-tools', 'htop', 'unzip' ]
+    desired_timezone: America/New_York
+    node_exporter_version: 1.8.1
+    node_exporter_tarball: node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
+    node_exporter_url: https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/{{ node_exporter_tarball }}
+    node_exporter_install_dir: /usr/local/bin
+    node_exporter_service_file: /etc/systemd/system/node_exporter.service
+
+  tasks:
+    # Task 1: Install all system upgrades
+    - name: Update apt cache and upgrade all packages on Ubuntu
+      ansible.builtin.apt:
+        update_cache: yes
+        upgrade: dist
+      when: ansible_facts['distribution'] == 'Ubuntu'
+
+    - name: Upgrade all packages on RHEL
+      ansible.builtin.yum:
+        name: '*'
+        state: latest
+      when: ansible_facts['distribution'] == 'RedHat' or ansible_facts['distribution'] == 'CentOS'
+
+    # Task 2: Create non-root user with sudo privileges
+    - name: Create new user
+      ansible.builtin.user:
+        name: "{{ new_user }}"
+        password: "{{ new_user_password | password_hash('sha512') }}"
+        state: present
+        shell: /bin/bash
+        create_home: yes
+
+    - name: Add new user to sudo group (Ubuntu)
+      ansible.builtin.user:
+        name: "{{ new_user }}"
+        groups: sudo
+        append: yes
+      when: ansible_facts['distribution'] == 'Ubuntu'
+
+    - name: Add new user to wheel group (RHEL)
+      ansible.builtin.user:
+        name: "{{ new_user }}"
+        groups: wheel
+        append: yes
+      when: ansible_facts['distribution'] == 'RedHat' or ansible_facts['distribution'] == 'CentOS'
+
+    - name: Ensure sudoers file allows wheel group (RHEL)
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers
+        regexp: '^%wheel\s+ALL=\(ALL\)\s+ALL'
+        line: '%wheel ALL=(ALL) ALL'
+        state: present
+        validate: '/usr/sbin/visudo -cf %s'
+      when: ansible_facts['distribution'] == 'RedHat' or ansible_facts['distribution'] == 'CentOS'
+
+    # Task 3: Configure NTP sync
+    - name: Install ntpdate and ntp (Ubuntu)
+      ansible.builtin.apt:
+        name: [ 'ntpdate', 'ntp' ]
+        state: present
+      when: ansible_facts['distribution'] == 'Ubuntu'
+
+    - name: Install chrony (RHEL)
+      ansible.builtin.yum:
+        name: chrony
+        state: present
+      when: ansible_facts['distribution'] == 'RedHat' or ansible_facts['distribution'] == 'CentOS'
+
+    - name: Enable and start ntp service (Ubuntu)
+      ansible.builtin.service:
+        name: ntp
+        state: started
+        enabled: yes
+      when: ansible_facts['distribution'] == 'Ubuntu'
+
+    - name: Enable and start chronyd service (RHEL)
+      ansible.builtin.service:
+        name: chronyd
+        state: started
+        enabled: yes
+      when: ansible_facts['distribution'] == 'RedHat' or ansible_facts['distribution'] == 'CentOS'
+
+    # Task 4: Install essential packages
+    - name: Install common packages on Ubuntu
+      ansible.builtin.apt:
+        name: "{{ common_packages_ubuntu }}"
+        state: present
+      when: ansible_facts['distribution'] == 'Ubuntu'
+
+    - name: Install common packages on RHEL
+      ansible.builtin.yum:
+        name: "{{ common_packages_rhel }}"
+        state: present
+      when: ansible_facts['distribution'] == 'RedHat' or ansible_facts['distribution'] == 'CentOS'
+
+    # Task 5: Set hostname and timezone
+    - name: Set hostname
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Set timezone
+      community.general.timezone:
+        name: "{{ desired_timezone }}"
+
+    # Task 6: Install Prometheus Node Exporter
+    - name: Create node_exporter group
+      ansible.builtin.group:
+        name: node_exporter
+        system: yes
+        state: present
+
+    - name: Create node_exporter user
+      ansible.builtin.user:
+        name: node_exporter
+        system: yes
+        shell: /sbin/nologin
+        group: node_exporter
+        create_home: no
+        state: present
+
+    - name: Download Node Exporter tarball
+      ansible.builtin.get_url:
+        url: "{{ node_exporter_url }}"
+        dest: /tmp/{{ node_exporter_tarball }}
+        mode: '0644'
+
+    - name: Extract Node Exporter tarball
+      ansible.builtin.unarchive:
+        src: /tmp/{{ node_exporter_tarball }}
+        dest: /tmp
+        remote_src: yes
+
+    - name: Copy node_exporter binary to install directory
+      ansible.builtin.copy:
+        src: /tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter
+        dest: "{{ node_exporter_install_dir }}/node_exporter"
+        owner: node_exporter
+        group: node_exporter
+        mode: '0755'
+        remote_src: yes
+
+    - name: Create systemd service file for Node Exporter
+      ansible.builtin.template:
+        src: node_exporter.service.j2
+        dest: "{{ node_exporter_service_file }}"
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart node_exporter
+
+    - name: Reload systemd and start node_exporter service
+      ansible.builtin.systemd:
+        name: node_exporter
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Open port 9100 in firewalld (RHEL)
+      ansible.posix.firewalld:
+        port: 9100/tcp
+        state: enabled
+        permanent: yes
+        immediate: yes
+      when: ansible_facts['distribution'] == 'RedHat' or ansible_facts['distribution'] == 'CentOS'
+
+    - name: Allow port 9100 in ufw (Ubuntu)
+      community.general.ufw:
+        rule: allow
+        port: '9100'
+        proto: tcp
+      when: ansible_facts['distribution'] == 'Ubuntu'
+
+  handlers:
+    - name: Restart node_exporter
+      ansible.builtin.systemd:
+        name: node_exporter
+        state: restarted
+
