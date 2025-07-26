@@ -2,22 +2,32 @@
 - name: Install Prometheus Node Exporter
   hosts: all
   become: yes
+
   vars:
     node_exporter_version: 1.8.1
-    node_exporter_tarball: node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
-    node_exporter_url: https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/{{ node_exporter_tarball }}
+    node_exporter_arch_map:
+      x86_64: amd64
+      aarch64: arm64
     node_exporter_install_dir: /usr/local/bin
     node_exporter_service_file: /etc/systemd/system/node_exporter.service
 
   tasks:
+
+    - name: Set architecture-specific variables
+      set_fact:
+        node_exporter_arch: "{{ node_exporter_arch_map[ansible_facts['architecture']] }}"
+        node_exporter_tarball: "node_exporter-{{ node_exporter_version }}.linux-{{ node_exporter_arch_map[ansible_facts['architecture']] }}.tar.gz"
+        node_exporter_url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-{{ node_exporter_arch_map[ansible_facts['architecture']] }}.tar.gz"
+        node_exporter_extract_path: "/tmp/node_exporter-{{ node_exporter_version }}.linux-{{ node_exporter_arch_map[ansible_facts['architecture']] }}"
+
     - name: Create node_exporter group
-      ansible.builtin.group:
+      group:
         name: node_exporter
         system: yes
         state: present
 
     - name: Create node_exporter user
-      ansible.builtin.user:
+      user:
         name: node_exporter
         system: yes
         shell: /sbin/nologin
@@ -26,20 +36,20 @@
         state: present
 
     - name: Download Node Exporter tarball
-      ansible.builtin.get_url:
+      get_url:
         url: "{{ node_exporter_url }}"
-        dest: /tmp/{{ node_exporter_tarball }}
+        dest: "/tmp/{{ node_exporter_tarball }}"
         mode: '0644'
 
     - name: Extract Node Exporter tarball
-      ansible.builtin.unarchive:
-        src: /tmp/{{ node_exporter_tarball }}
+      unarchive:
+        src: "/tmp/{{ node_exporter_tarball }}"
         dest: /tmp
         remote_src: yes
 
     - name: Copy node_exporter binary to install directory
-      ansible.builtin.copy:
-        src: /tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter
+      copy:
+        src: "{{ node_exporter_extract_path }}/node_exporter"
         dest: "{{ node_exporter_install_dir }}/node_exporter"
         owner: node_exporter
         group: node_exporter
@@ -47,7 +57,7 @@
         remote_src: yes
 
     - name: Create systemd service file for Node Exporter
-      ansible.builtin.template:
+      template:
         src: node_exporter.service.j2
         dest: "{{ node_exporter_service_file }}"
         owner: root
@@ -56,7 +66,7 @@
       notify: Restart node_exporter
 
     - name: Reload systemd and start node_exporter service
-      ansible.builtin.systemd:
+      systemd:
         name: node_exporter
         state: started
         enabled: yes
@@ -68,9 +78,9 @@
         state: enabled
         permanent: yes
         immediate: yes
-      when: ansible_facts['distribution'] == 'RedHat' or ansible_facts['distribution'] == 'CentOS'
+      when: ansible_facts['os_family'] == 'RedHat'
 
-    - name: Allow port 9100 in ufw (Ubuntu)
+    - name: Allow port 9100 in UFW (Ubuntu)
       community.general.ufw:
         rule: allow
         port: '9100'
@@ -79,7 +89,9 @@
 
   handlers:
     - name: Restart node_exporter
-      ansible.builtin.systemd:
+      systemd:
         name: node_exporter
         state: restarted
+        enabled: yes
+        daemon_reload: yes  
 
