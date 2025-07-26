@@ -3,12 +3,12 @@
   hosts: all
   become: yes
   vars:
-    new_user: ansible_user
-    new_user_password: your_secure_password
+    new_user: <new_username>
+    new_user_password: <password>
 
   tasks:
     - name: Create new user
-      ansible.builtin.user:
+      user:
         name: "{{ new_user }}"
         password: "{{ new_user_password | password_hash('sha512') }}"
         state: present
@@ -16,21 +16,21 @@
         create_home: yes
 
     - name: Add new user to sudo group (Ubuntu)
-      ansible.builtin.user:
+      user:
         name: "{{ new_user }}"
         groups: sudo
         append: yes
       when: ansible_facts['distribution'] == 'Ubuntu'
 
     - name: Add new user to wheel group (RHEL)
-      ansible.builtin.user:
+      user:
         name: "{{ new_user }}"
         groups: wheel
         append: yes
       when: ansible_facts['distribution'] == 'RedHat' or ansible_facts['distribution'] == 'CentOS'
 
     - name: Ensure sudoers file allows wheel group (RHEL)
-      ansible.builtin.lineinfile:
+      lineinfile:
         path: /etc/sudoers
         regexp: '^%wheel\s+ALL=\(ALL\)\s+ALL'
         line: '%wheel ALL=(ALL) ALL'

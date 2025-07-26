@@ -4,26 +4,26 @@
   become: yes
   tasks:
     - name: Install ntpdate and ntp (Ubuntu)
-      ansible.builtin.apt:
+      apt:
         name: [ 'ntpdate', 'ntp' ]
         state: present
       when: ansible_facts['distribution'] == 'Ubuntu'
 
     - name: Install chrony (RHEL)
-      ansible.builtin.yum:
+      yum:
         name: chrony
         state: present
       when: ansible_facts['distribution'] == 'RedHat' or ansible_facts['distribution'] == 'CentOS'
 
     - name: Enable and start ntp service (Ubuntu)
-      ansible.builtin.service:
+      service:
         name: ntp
         state: started
         enabled: yes
       when: ansible_facts['distribution'] == 'Ubuntu'
 
     - name: Enable and start chronyd service (RHEL)
-      ansible.builtin.service:
+      service:
         name: chronyd
         state: started
         enabled: yes
