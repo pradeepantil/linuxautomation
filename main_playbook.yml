@@ -81,9 +81,10 @@
         name: "{{ common_packages_ubuntu if ansible_facts['distribution'] == 'Ubuntu' else common_packages_rhel }}"
         state: present
 
-    - name: Set hostname
-      hostname:
-        name: "{{ inventory_hostname }}"
+    - name: Set system timezone
+      ansible.builtin.shell: timedatectl set-timezone "{{ desired_timezone }}"
+      args:
+        warn: false
 
     - name: Set timezone
       community.general.timezone:
