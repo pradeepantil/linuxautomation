@@ -86,7 +86,7 @@
         name: "{{ inventory_hostname }}"
 
     - name: Set timezone
-      timezone:
+      community.general.timezone:
         name: "{{ desired_timezone }}"
 
     - name: Create node_exporter group
