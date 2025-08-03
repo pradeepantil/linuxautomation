@@ -84,8 +84,6 @@
 
     - name: Set system timezone (without collection)
       shell: timedatectl set-timezone "{{ desired_timezone }}"
-      args:
-        warn: false
 
     - name: Create node_exporter group
       group:
