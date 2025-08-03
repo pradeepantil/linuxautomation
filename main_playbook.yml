@@ -21,16 +21,13 @@
       set_fact:
         node_exporter_arch: "{{ node_exporter_arch_map[ansible_facts['architecture']] }}"
 
-    - name: Set node_exporter tarball name
+    - name: Set node_exporter tarball and URL
       set_fact:
         node_exporter_tarball: "node_exporter-{{ node_exporter_version }}.linux-{{ node_exporter_arch }}.tar.gz"
-
-    - name: Set node_exporter URL and extract path
-      set_fact:
-        node_exporter_url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/{{ node_exporter_tarball }}"
+        node_exporter_url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-{{ node_exporter_arch }}.tar.gz"
         node_exporter_extract_path: "/tmp/node_exporter-{{ node_exporter_version }}.linux-{{ node_exporter_arch }}"
 
-    - name: Update apt cache and upgrade all packages on Ubuntu
+    - name: Update apt cache and upgrade on Ubuntu
       apt:
         update_cache: yes
         upgrade: yes
@@ -67,7 +64,7 @@
 
     - name: Install NTP tools
       package:
-        name: "{{ 'ntpdate,ntp' if ansible_facts['distribution'] == 'Ubuntu' else 'chrony' }}"
+        name: "{{ ['ntpdate', 'ntp'] if ansible_facts['distribution'] == 'Ubuntu' else ['chrony'] }}"
         state: present
 
     - name: Enable and start NTP services
@@ -81,14 +78,14 @@
         name: "{{ common_packages_ubuntu if ansible_facts['distribution'] == 'Ubuntu' else common_packages_rhel }}"
         state: present
 
-    - name: Set system timezone
-      ansible.builtin.shell: timedatectl set-timezone "{{ desired_timezone }}"
+    - name: Set hostname
+      hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Set system timezone (without collection)
+      shell: timedatectl set-timezone "{{ desired_timezone }}"
       args:
         warn: false
-
-    - name: Set timezone
-      community.general.timezone:
-        name: "{{ desired_timezone }}"
 
     - name: Create node_exporter group
       group:
@@ -125,8 +122,21 @@
         remote_src: yes
 
     - name: Create node_exporter systemd service
-      template:
-        src: node_exporter.service.j2
+      copy:
+        content: |
+          [Unit]
+          Description=Node Exporter
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          User=node_exporter
+          Group=node_exporter
+          Type=simple
+          ExecStart=/usr/local/bin/node_exporter
+
+          [Install]
+          WantedBy=default.target
         dest: "{{ node_exporter_service_file }}"
         owner: root
         group: root
@@ -140,19 +150,16 @@
         enabled: yes
         daemon_reload: yes
 
-    - name: Allow port 9100 in firewall (RHEL)
-      firewalld:
-        port: 9100/tcp
-        state: enabled
-        permanent: yes
-        immediate: yes
+    - name: Open port 9100 in firewalld (RHEL)
+      shell: |
+        firewall-cmd --permanent --add-port=9100/tcp
+        firewall-cmd --reload
       when: ansible_facts['os_family'] == 'RedHat'
 
-    - name: Allow port 9100 in UFW (Ubuntu)
-      community.general.ufw:
-        rule: allow
-        port: '9100'
-        proto: tcp
+    - name: Open port 9100 in UFW (Ubuntu)
+      shell: |
+        ufw allow 9100/tcp
+        ufw reload
       when: ansible_facts['distribution'] == 'Ubuntu'
 
   handlers:
@@ -161,4 +168,3 @@
         name: node_exporter
         state: restarted
         daemon_reload: yes
-
