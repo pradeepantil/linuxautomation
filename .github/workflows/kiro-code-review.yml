@@ -18,7 +18,7 @@ jobs:
 
           - name: Run Kiro code reviewer agent
             env:
-                KIRO_API_KEY: ${{ secrets.KIRO_API_KEY }}
+                KIRO_API_KEY: ${{ secrets.kiro_api }}
             run: |
                 kiro-cli chat \
                     --agent code-reviewer \
